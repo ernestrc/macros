@@ -144,8 +144,8 @@ private[this] object Implementations {
 
     val internal = symbol.asInstanceOf[scala.reflect.internal.Symbols#Symbol]
 
-    if (!internal.isSealed)
-      throw new Exception(s"${internal.fullName} is not sealed!!")
+//    if (!internal.isSealed)
+//      throw new Exception(s"${internal.fullName} is not sealed!!")
 
     val descendants = internal.sealedDescendants.map(_.asInstanceOf[Symbol]) - symbol
 
