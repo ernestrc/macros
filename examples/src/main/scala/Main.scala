@@ -9,7 +9,7 @@ import scala.reflect.ClassTag
 sealed trait A {
   val id: Long
 }
-case class Aa(id: Long) extends A
+case class Aa(id: Long, a: String) extends A
 case class Ae(id: Long) extends A
 case class Ai(id: Long) extends A
 
@@ -32,11 +32,20 @@ object Main extends App {
 
   inspectMembers(nano)
 
-//  val graters: PartialFunction[String, Grater[_ <: A]] = grateDescendantsFromContext[A](ctx,classOf[A])
+  val graters: PartialFunction[String, Grater[_ <: A]] = grateSealed[A]
 
-//  graters("Aa")
+  val graterAa: Grater[_ <: A] = graters("Aa")
+
+  val aa = graterAa.fromJSON(
+    """ {
+      |   "id"  :   2,
+      |   "a"   :   "hello"
+      | }
+    """.stripMargin)
+
+  println(aa)
 
 
-  val test = missingParamType(1)
+//  val test = missingParamType(1)
 
 }

@@ -136,8 +136,8 @@ private[this] object Implementations {
   }
 
 
-  def grateDescendants_impl[A : c.WeakTypeTag](c: whitebox.Context)(salatCtx: c.Expr[com.novus.salat.Context], clazz: c.Expr[Class[A]])
-  : c.Expr[PartialFunction[String, Grater[_ <: A]]] = {
+  def grateSealed_impl[A : c.WeakTypeTag](c: whitebox.Context)(ctx: c.Expr[com.novus.salat.Context])
+  : c.Expr[Map[String, Grater[_ <: A]]] = {
     import c.universe._
 
     val symbol = c.weakTypeOf[A].typeSymbol
@@ -147,38 +147,35 @@ private[this] object Implementations {
     if (!internal.isSealed)
       throw new Exception(s"${internal.fullName} is not sealed!!")
 
+    val descendants = internal.sealedDescendants.map(_.asInstanceOf[Symbol]) - symbol
 
-
-    val descendants = c.Expr[List[String]]{
-//      q"""{List(${internal.sealedDescendants.map(d => d.asInstanceOf[Symbol].fullName)}).flatten}"""
+    val descendantsExpr = c.Expr[List[String]]{
       Apply(
         TypeApply(
           Select(
             Ident(definitions.ListModule),
             TermName("apply")
           ),
-          List[c.Tree](
+          List(
             Select(
-              Ident("Predef"),
+              Ident(TermName("Predef")),
               TypeName("String"))
           )
         ),
-        internal.sealedDescendants.map(d ⇒ Literal(Constant(d.asInstanceOf[Symbol].fullName))).toList)
+        descendants.map(d ⇒ Literal(Constant(d.fullName))).toList)
     }
 
     reify{
-      val $descendants = descendants.splice
-      val $ctx: com.novus.salat.Context = salatCtx.splice
+      val $descendants = descendantsExpr.splice
+      val $ctx = ctx.splice
       var $n = $descendants.length
-      var $graters = PartialFunction.empty[String, Grater[_ <: A]]
+      val $graters = scala.collection.mutable.Map.empty[String, Grater[_ <: A]]
       while ($n != 0) {
         $n -= 1
         val $desc = $descendants($n)
-        $graters = $graters.orElse[String, Grater[_ <: A]]{
-          case `$desc` ⇒ $ctx.lookup($desc).asInstanceOf[Grater[_ <: A]]
-        }
+        $graters.update($desc, $ctx.lookup($desc).asInstanceOf[Grater[_ <: A]])
       }
-      $graters
+      $graters.toMap
     }
   }
 
@@ -203,13 +200,13 @@ object Macros {
   def printExpr(param: Any): Unit = macro Implementations.printExpr_impl
 
   /**
-   * Takes a Sealed Trait and gives you back a partial function
-   * of each descendant's class name and a Grater for that class.
+   * Takes a Sealed Trait and gives you back a grater for
+   * each of the descendants.
    *
-   * @return PartialFunction[String, com.novus.salat.Grater[_]
+   * @return Map[String, com.novus.salat.Grater[_]
    */
-  def grateDescendantsFromContext[A](salatCtx: com.novus.salat.Context, clazz: Class[A])
-  : PartialFunction[String, Grater[_ <: A]] = macro Implementations.grateDescendants_impl[A]
+  def grateSealed[A](implicit ctx: com.novus.salat.Context)
+  : Map[String, Grater[_ <: A]] = macro Implementations.grateSealed_impl[A]
 
   def missingParamType(a: Int):PartialFunction[Int,String] = macro Implementations.missingParamType_impl
 
