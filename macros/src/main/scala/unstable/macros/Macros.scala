@@ -2,7 +2,8 @@ package unstable.macros
 
 import com.novus.salat.Grater
 
-import scala.reflect.macros.whitebox
+import scala.reflect.ClassTag
+import scala.reflect.macros.{blackbox, whitebox}
 import scala.util.parsing.json.{JSONArray, JSONObject}
 
 
@@ -117,19 +118,39 @@ private[this] object Implementations {
 
   }
 
-
-  def grateDescendants_impl[P : c.WeakTypeTag](c: whitebox.Context)(ctx: c.Expr[com.novus.salat.Context])
-  : c.Expr[PartialFunction[String, Grater[_]]] = {
+  def missingParamType_impl(c: whitebox.Context)(a: c.Expr[Int]):c.Expr[PartialFunction[Int,String]] = {
     import c.universe._
 
-    val symbol = c.weakTypeOf[P].typeSymbol
+    reify {
+      val spliced = a.splice
+      val spliced2 = a.splice * 2
+      val pf1: PartialFunction[Int, String] = {
+        case `spliced` ⇒ a.splice.toString
+      }
+      val pf2: PartialFunction[Int, String] = {
+        case `spliced2` ⇒ a.splice.toString
+      }
+      val PF:PartialFunction[Int, String] = pf1.orElse(pf2)
+      PF:PartialFunction[Int, String]
+    }
+  }
+
+
+  def grateDescendants_impl[A : c.WeakTypeTag](c: whitebox.Context)(salatCtx: c.Expr[com.novus.salat.Context], clazz: c.Expr[Class[A]])
+  : c.Expr[PartialFunction[String, Grater[_ <: A]]] = {
+    import c.universe._
+
+    val symbol = c.weakTypeOf[A].typeSymbol
 
     val internal = symbol.asInstanceOf[scala.reflect.internal.Symbols#Symbol]
 
     if (!internal.isSealed)
       throw new Exception(s"${internal.fullName} is not sealed!!")
 
+
+
     val descendants = c.Expr[List[String]]{
+//      q"""{List(${internal.sealedDescendants.map(d => d.asInstanceOf[Symbol].fullName)}).flatten}"""
       Apply(
         TypeApply(
           Select(
@@ -138,23 +159,23 @@ private[this] object Implementations {
           ),
           List[c.Tree](
             Select(
-              Ident(TermName("Predef")),
+              Ident("Predef"),
               TypeName("String"))
           )
         ),
         internal.sealedDescendants.map(d ⇒ Literal(Constant(d.asInstanceOf[Symbol].fullName))).toList)
     }
 
-    reify {
+    reify{
       val $descendants = descendants.splice
-      val $ctx = ctx.splice
+      val $ctx: com.novus.salat.Context = salatCtx.splice
       var $n = $descendants.length
-      var $graters = PartialFunction.empty[String, Grater[_]]
+      var $graters = PartialFunction.empty[String, Grater[_ <: A]]
       while ($n != 0) {
         $n -= 1
         val $desc = $descendants($n)
-        $graters = $graters orElse {
-          case `$desc` ⇒ $ctx.lookup($desc)
+        $graters = $graters.orElse[String, Grater[_ <: A]]{
+          case `$desc` ⇒ $ctx.lookup($desc).asInstanceOf[Grater[_ <: A]]
         }
       }
       $graters
@@ -187,8 +208,10 @@ object Macros {
    *
    * @return PartialFunction[String, com.novus.salat.Grater[_]
    */
-  def grateDescendantsFromContext[E](ctx: com.novus.salat.Context)
-  : PartialFunction[String, Grater[_]] = macro Implementations.grateDescendants_impl[E]
+  def grateDescendantsFromContext[A](salatCtx: com.novus.salat.Context, clazz: Class[A])
+  : PartialFunction[String, Grater[_ <: A]] = macro Implementations.grateDescendants_impl[A]
+
+  def missingParamType(a: Int):PartialFunction[Int,String] = macro Implementations.missingParamType_impl
 
   /**
    * TODO finish

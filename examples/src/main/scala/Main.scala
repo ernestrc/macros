@@ -3,6 +3,16 @@ import com.novus.salat.Grater
 import unstable.macros.Macros._
 import com.novus.salat.global._
 
+import scala.reflect.ClassTag
+
+
+sealed trait A {
+  val id: Long
+}
+case class Aa(id: Long) extends A
+case class Ae(id: Long) extends A
+case class Ai(id: Long) extends A
+
 object Main extends App {
 
   val amazingMacros = 10
@@ -22,16 +32,11 @@ object Main extends App {
 
   inspectMembers(nano)
 
-  sealed trait A {
-    val id: Long
-  }
-  case class Aa(id: Long) extends A
-  case class Ae(id: Long) extends A
-  case class Ai(id: Long) extends A
+//  val graters: PartialFunction[String, Grater[_ <: A]] = grateDescendantsFromContext[A](ctx,classOf[A])
 
-  val graters: PartialFunction[String, Grater[_]] = grateDescendantsFromContext[TestClass](ctx)
+//  graters("Aa")
 
-  graters("Aa")
 
+  val test = missingParamType(1)
 
 }
