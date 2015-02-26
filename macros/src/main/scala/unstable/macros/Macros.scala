@@ -2,12 +2,10 @@ package unstable.macros
 
 import com.novus.salat.Grater
 
-import scala.reflect.ClassTag
-import scala.reflect.macros.{blackbox, whitebox}
+import scala.reflect.macros.whitebox
 import scala.util.parsing.json.{JSONArray, JSONObject}
 
-
-private[this] object Helpers {
+private [macros] object Helpers {
 
   import scala.util.parsing.json.JSON
 
@@ -31,7 +29,7 @@ private[this] object Helpers {
 
 }
 
-private[this] object Implementations {
+private [macros] object Implementations {
 
   def printExpr_impl(c: whitebox.Context)(param: c.Expr[Any]): c.Expr[Unit] = {
     import c.universe._
@@ -71,7 +69,7 @@ private[this] object Implementations {
   //divide fields in param constructors public, private. passed as implicit and normal other fields created inside
   //divide methods as public and private
   //give superClass and className
-  def inspect_impl[T : c.WeakTypeTag](c: whitebox.Context)(obj: c.Expr[T]): c.Expr[Unit] = {
+  def inspect_impl[T: c.WeakTypeTag](c: whitebox.Context)(obj: c.Expr[T]): c.Expr[Unit] = {
     import c.universe._
 
     val sym = c.weakTypeOf[T].typeSymbol
@@ -118,62 +116,34 @@ private[this] object Implementations {
 
   }
 
-  def missingParamType_impl(c: whitebox.Context)(a: c.Expr[Int]):c.Expr[PartialFunction[Int,String]] = {
-    import c.universe._
-
-    reify {
-      val spliced = a.splice
-      val spliced2 = a.splice * 2
-      val pf1: PartialFunction[Int, String] = {
-        case `spliced` ⇒ a.splice.toString
-      }
-      val pf2: PartialFunction[Int, String] = {
-        case `spliced2` ⇒ a.splice.toString
-      }
-      val PF:PartialFunction[Int, String] = pf1.orElse(pf2)
-      PF:PartialFunction[Int, String]
-    }
-  }
-
 
   def grateSealed_impl[A : c.WeakTypeTag](c: whitebox.Context)(ctx: c.Expr[com.novus.salat.Context])
-  : c.Expr[Map[String, Grater[_ <: A]]] = {
+  : c.Expr[Map[TypeHint, Grater[_ <: A]]] = {
     import c.universe._
+
+    implicit val liftableTypeHint: Liftable[InjectedTypeHint] = Liftable[InjectedTypeHint] { hint ⇒
+        q"_root_.unstable.macros.InjectedTypeHint(${hint.hint})"
+      }
 
     val symbol = c.weakTypeOf[A].typeSymbol
 
     val internal = symbol.asInstanceOf[scala.reflect.internal.Symbols#Symbol]
 
-    if (!internal.isSealed)
-      throw new Exception(s"${internal.fullName} is not sealed!!")
-
     val descendants = internal.sealedDescendants.map(_.asInstanceOf[Symbol]) - symbol
 
-    val descendantsExpr = c.Expr[List[String]]{
-      Apply(
-        TypeApply(
-          Select(
-            Ident(definitions.ListModule),
-            TermName("apply")
-          ),
-          List(
-            Select(
-              Ident(TermName("Predef")),
-              TypeName("String"))
-          )
-        ),
-        descendants.map(d ⇒ Literal(Constant(d.fullName))).toList)
+    val descendantsExpr = c.Expr[List[TypeHint]] {
+      q"""{List(${descendants.map( d ⇒ InjectedTypeHint(d.fullName)).toList}).flatten}"""
     }
 
     reify{
       val $descendants = descendantsExpr.splice
       val $ctx = ctx.splice
       var $n = $descendants.length
-      val $graters = scala.collection.mutable.Map.empty[String, Grater[_ <: A]]
+      val $graters = scala.collection.mutable.Map.empty[TypeHint, Grater[_ <: A]]
       while ($n != 0) {
         $n -= 1
         val $desc = $descendants($n)
-        $graters.update($desc, $ctx.lookup($desc).asInstanceOf[Grater[_ <: A]])
+        $graters.update($desc, $ctx.lookup($desc.hint).asInstanceOf[Grater[_ <: A]])
       }
       $graters.toMap
     }
@@ -203,12 +173,10 @@ object Macros {
    * Takes a Sealed Trait and gives you back a grater for
    * each of the descendants.
    *
-   * @return Map[String, com.novus.salat.Grater[_]
+   * @return Map[TypeHint, com.novus.salat.Grater[_]
    */
   def grateSealed[A](implicit ctx: com.novus.salat.Context)
-  : Map[String, Grater[_ <: A]] = macro Implementations.grateSealed_impl[A]
-
-  def missingParamType(a: Int):PartialFunction[Int,String] = macro Implementations.missingParamType_impl
+  : Map[TypeHint, Grater[_ <: A]] = macro Implementations.grateSealed_impl[A]
 
   /**
    * TODO finish
